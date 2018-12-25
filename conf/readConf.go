@@ -60,15 +60,16 @@ func ReadConf(filepath string) (Hosts []*hostInfo, err error) {
 	}
 
 	hostList := bytes.Split(fb, []byte("\n"))
+
 	for index, host := range hostList {
-		if len(host) == 0 {
-			continue
-		}
 		info := bytes.Fields(host)
 		if len(info) != 5 {
 
 			return nil, errors.New(fmt.Sprintf("格式不对：Line %v %v", index+1, string(host)))
 		}
+
+		// 过滤 hosts
+
 		Hosts = append(Hosts, &hostInfo{
 			Name:     string(info[0]),
 			User:     string(info[1]),

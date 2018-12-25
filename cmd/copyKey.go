@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/doovemax/all-tool/conf"
@@ -75,7 +76,41 @@ func readKey(c *cobra.Command, args []string) {
 		logrus.Fatalf("ssh public key error: %v", err)
 		logrus.Exit(2)
 	}
+	logrus.Infoln("--------------go go go------------------")
 	for index, host := range conf.Hosts {
+
+		var LimitHostsList []string
+		var re *regexp.Regexp
+		var flag = 0
+		if *LimitHosts != "" && *RegexFlag == false {
+			LimitHostsList = strings.Split(*LimitHosts, ",")
+			flag = 1
+		} else if *LimitHosts != "" && *RegexFlag == true {
+			re, err = regexp.Compile(*LimitHosts)
+			if err != nil {
+				return
+			}
+			flag = 2
+		}
+
+		if flag == 1 {
+			for _, h := range LimitHostsList {
+				if h == host.Name {
+					goto mach
+				}
+
+			}
+			continue
+
+		} else if flag == 2 {
+			if re.MatchString(host.Name) {
+				goto mach
+			}
+			continue
+		}
+
+	mach:
+
 		session, err := host.SshClient()
 		if err != nil {
 			logrus.Errorf("ssh session error:  %v", err)
@@ -85,10 +120,11 @@ func readKey(c *cobra.Command, args []string) {
 		session.Stderr = os.Stderr
 		err = session.Run(fmt.Sprintf("echo '%s' >> $HOME/.ssh/authorized_keys && chmod 600 $HOME/.ssh/authorized_keys ", string(idRsaPub)))
 		if err != nil {
-			logrus.Printf("%d) %-16v%-6v%v: %s\n", index+1, host.IP, host.Port, host.User, err.Error())
+			logrus.Printf("line: %d %-16v%-6v%v: %s\n", index+1, host.IP, host.Port, host.User, err.Error())
 		} else {
-			logrus.Printf("%d) %-16v%-6v%v: %s\n", index+1, host.IP, host.Port, host.User, "Successing")
+			logrus.Printf("line: %d %-16v%-6v%v: %s\n", index+1, host.IP, host.Port, host.User, "Successing")
 		}
 
 	}
+	logrus.Infoln("--------------over------------------")
 }
