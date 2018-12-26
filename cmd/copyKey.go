@@ -3,9 +3,14 @@ package cmd
 import (
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"regexp"
 	"strings"
+
+	"golang.org/x/crypto/ssh/knownhosts"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/doovemax/all-tool/conf"
 
@@ -120,11 +125,87 @@ func readKey(c *cobra.Command, args []string) {
 		session.Stderr = os.Stderr
 		err = session.Run(fmt.Sprintf("echo '%s' >> $HOME/.ssh/authorized_keys && chmod 600 $HOME/.ssh/authorized_keys ", string(idRsaPub)))
 		if err != nil {
-			logrus.Printf("line: %d %-16v%-6v%v: %s\n", index+1, host.IP, host.Port, host.User, err.Error())
+			logrus.Errorf("line: %d %-16v%-6v%v: %s\n", index+1, host.IP, host.Port, host.User, err.Error())
 		} else {
-			logrus.Printf("line: %d %-16v%-6v%v: %s\n", index+1, host.IP, host.Port, host.User, "Successing")
+
+			logrus.Infof("line: %d %-16v%-6v%v: %s\n", index+1, host.IP, host.Port, host.User, "Successing")
+
+			IP, err := getIP()
+			if err != nil {
+				logrus.Errorf("无法获取 IP 地址: %v\n", err)
+			} else {
+				line, err := getKnownHost(idRsaPub, IP)
+
+				if err != nil {
+					logrus.Errorf("生成 Knownhosts 失败: %v\n", err)
+				} else {
+					err = WriteKnownHost(line)
+					if err != nil {
+						logrus.Errorf("Known_hosts 写入失败：%v", err)
+					}
+				}
+			}
+
 		}
 
 	}
 	logrus.Infoln("--------------over------------------")
+}
+
+func getKnownHost(pubKey []byte, IP string) (line string, err error) {
+	pub, _, _, _, err := ssh.ParseAuthorizedKey(pubKey)
+	if err != nil {
+		return "", err
+	}
+	ip := strings.Split(IP, ".")
+
+	knownHostsLine := knownhosts.Line(ip, pub)
+	return knownHostsLine, err
+
+}
+
+func getIP() (IP string, err error) {
+	netInterfaces, err := net.Interfaces()
+	if err != nil {
+		return
+	}
+
+	for i := 0; i < len(netInterfaces); i++ {
+		if (netInterfaces[i].Flags & net.FlagUp) != 0 {
+			addrs, _ := netInterfaces[i].Addrs()
+			for _, address := range addrs {
+				if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+					if ipnet.IP.To4() != nil {
+						return ipnet.IP.String(), nil
+					}
+				}
+			}
+
+		}
+	}
+	return
+}
+
+func WriteKnownHost(line string) (err error) {
+	var f *os.File
+	home := os.Getenv("HOME")
+	_, err = os.Stat(home + "/.ssh/known_hosts")
+	if err == nil {
+		f, err = os.OpenFile(home+"/.ssh/known_hosts", os.O_WRONLY|os.O_APPEND, 644)
+		if err != nil {
+			return err
+		}
+	} else {
+		f, err = os.OpenFile(home+"/.ssh/known_hosts", os.O_CREATE|os.O_WRONLY, 644)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = f.WriteString(line + "\n")
+	if err != nil {
+		return
+	}
+
+	return nil
 }
